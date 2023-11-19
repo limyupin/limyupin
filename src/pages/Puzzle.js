@@ -116,7 +116,7 @@ export default function App() {
     try {
       await auth.signOut();
       setUser(null);
-      history.push("/signin"); // Redirect to sign-in page after logout
+      history("/signin"); // Redirect to sign-in page after logout
     } catch (error) {
       console.error("Error logging out:", error.message);
     }
