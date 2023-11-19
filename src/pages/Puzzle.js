@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { doc, setDoc, getDocs } from "firebase/firestore";
+import { doc, setDoc, getDoc } from "firebase/firestore";
 import { auth, firestore } from "../firebase/firebase";
 
 import React from "react";
@@ -81,13 +81,33 @@ export default function App() {
     const unsubscribe = auth.onAuthStateChanged((user) => {
       if (user) {
         setUser(user);
-        setPuzzle(getPuzzle()); // Load the puzzle when the user is authenticated
+  
+        // Load the puzzle when the user is authenticated
+        setPuzzle(getPuzzle());
+  
+        // Fetch previous best time and moves from Firestore
+        const fetchBestStats = async () => {
+          try {
+            const userDocRef = doc(firestore, "usersCollection", user.email);
+            const docSnapshot = await getDoc(userDocRef);
+        
+            if (docSnapshot.exists()) {
+              const data = docSnapshot.data();
+              setBestMoves(data.moves);
+              setBestTime(data.elapsedTime);
+            }
+          } catch (error) {
+            console.error("Error fetching best stats:", error.message);
+          }
+        };
+  
+        fetchBestStats();
       } else {
         // If not authenticated, redirect to the login page
         history("/signin");
       }
     });
-
+  
     // Clean up the subscription when the component unmounts
     return () => unsubscribe();
   }, [history]);
@@ -202,21 +222,45 @@ export default function App() {
       const timeElapsed = endTime - startTime;
       setElapsedTime(timeElapsed);
 
-      // Save completed puzzle details to Firestore with user's email as the document ID
       const saveCompletedPuzzle = async () => {
         try {
           // Use the user's email as the document ID
           const userDocRef = doc(firestore, "usersCollection", user.email);
-
-          await setDoc(userDocRef, {
-            moves: moves,
-            elapsedTime: timeElapsed,
-            timestamp: new Date(),
-          });
-
-          console.log("Completed puzzle details saved to Firestore.");
+      
+          // Fetch the existing data
+          const docSnapshot = await getDoc(userDocRef);
+      
+          // Check if the document exists
+          if (docSnapshot.exists()) {
+            const existingData = docSnapshot.data();
+      
+            // Compare with the new data
+            if (!existingData.bestMoves || moves < existingData.bestMoves) {
+              // Update the document only if the new score is better
+              await setDoc(userDocRef, {
+                moves: moves,
+                elapsedTime: timeElapsed,
+                timestamp: new Date(),
+                moves: moves, // Update the best moves field
+                elapsedTime: timeElapsed, // Update the best time field
+              });
+      
+              console.log("Completed puzzle details updated in Firestore.");
+            }
+          } else {
+            // If the document doesn't exist, create a new one
+            await setDoc(userDocRef, {
+              moves: moves,
+              elapsedTime: timeElapsed,
+              timestamp: new Date(),
+              moves: moves, // Set the best moves field
+              elapsedTime: timeElapsed, // Set the best time field
+            });
+      
+            console.log("New completed puzzle details saved to Firestore.");
+          }
         } catch (error) {
-          console.error("Error saving completed puzzle details:", error.message);
+          console.error("Error saving/updating completed puzzle details:", error.message);
         }
       };
 
@@ -231,6 +275,14 @@ export default function App() {
     setStartTime(null);
     setElapsedTime(0);
     setTimerDisplay("0:00");
+    window.location.reload();
+  };
+
+  const formatTime = (time) => {
+    const seconds = Math.floor(time / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${remainingSeconds < 10 ? `0${remainingSeconds}` : remainingSeconds}`;
   };
 
   return (
@@ -255,6 +307,8 @@ export default function App() {
         </div>
       )}
       {<h3>Moves: {moves}</h3>}
+      <p>Best Moves: {bestMoves}</p>
+      <p>Best Time: {formatTime(bestTime)}</p>
       <div
         style={{
           display: "inline-block",
